@@ -1,0 +1,460 @@
+import express from 'express';
+import bodyParser from 'body-parser';
+import { NeynarAPIClient } from '@neynar/nodejs-sdk';
+import { Clanker } from 'clanker-sdk/v4';
+import { createWalletClient, createPublicClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base } from 'viem/chains';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config();
+
+const app = express();
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static('public'));
+
+// Initialize Neynar client
+const neynar = new NeynarAPIClient(process.env.NEYNAR_API_KEY);
+
+// Initialize Viem clients for Base blockchain
+const account = privateKeyToAccount(process.env.BASE_WALLET_PRIVATE_KEY);
+const publicClient = createPublicClient({
+  chain: base,
+  transport: http(),
+});
+
+const walletClient = createWalletClient({
+  account,
+  chain: base,
+  transport: http(),
+});
+
+// Initialize Clanker SDK
+const clanker = new Clanker({
+  publicClient,
+  wallet: walletClient,
+});
+
+console.log('🤖 Farcaster Clanker Bot initialized (MANUAL MODE)');
+console.log('Wallet Address:', account.address);
+
+let deploymentHistory = [];
+
+// Deploy token via Clanker
+async function deployToken(name, symbol) {
+  try {
+    console.log(`🚀 Deploying token: ${name} (${symbol})`);
+
+    const { txHash, waitForTransaction, error } = await clanker.deploy({
+      name,
+      symbol,
+      tokenAdmin: account.address,
+    });
+
+    if (error) {
+      console.error('❌ Deployment error:', error);
+      return { success: false, error: error.message || 'Deployment failed' };
+    }
+
+    console.log('⏳ Waiting for transaction confirmation...');
+    console.log('Transaction Hash:', txHash);
+
+    const result = await waitForTransaction();
+    console.log('✅ Token deployed successfully!');
+    console.log('Token Address:', result.tokenAddress);
+
+    const clankerLink = `https://clanker.world/clanker/${result.tokenAddress}`;
+
+    return {
+      success: true,
+      txHash,
+      tokenAddress: result.tokenAddress,
+      clankerLink,
+    };
+  } catch (error) {
+    console.error('❌ Deployment failed:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Reply to cast
+async function replyToCast(castHash, message) {
+  try {
+    await neynar.publishCast(process.env.SIGNER_UUID, message, {
+      replyTo: castHash,
+    });
+    console.log('✅ Reply sent successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Failed to reply:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// API endpoint: Deploy and reply
+app.post('/api/deploy', async (req, res) => {
+  try {
+    const { tokenName, tokenSymbol, castHash } = req.body;
+
+    if (!tokenName || !tokenSymbol) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token name and symbol required',
+      });
+    }
+
+    console.log(`📥 Deploy request: ${tokenName} (${tokenSymbol})`);
+
+    // Send processing message first if castHash provided
+    if (castHash) {
+      await replyToCast(
+        castHash,
+        `🚀 Deploying token ${tokenName} (${tokenSymbol}) on Base... Please wait!`
+      );
+    }
+
+    // Deploy token
+    const result = await deployToken(tokenName, tokenSymbol);
+
+    if (result.success) {
+      // Save to history
+      deploymentHistory.unshift({
+        tokenName,
+        tokenSymbol,
+        tokenAddress: result.tokenAddress,
+        clankerLink: result.clankerLink,
+        txHash: result.txHash,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Reply to cast if hash provided
+      if (castHash) {
+        await replyToCast(
+          castHash,
+          `✅ Token ${tokenName} deployed successfully!\n\n🔗 Clanker: ${result.clankerLink}\n📜 Contract: ${result.tokenAddress}\n⛓️ TX: https://basescan.org/tx/${result.txHash}`
+        );
+      }
+
+      res.json({ success: true, ...result });
+    } else {
+      // Reply with error if cast hash provided
+      if (castHash) {
+        await replyToCast(
+          castHash,
+          `❌ Failed to deploy token: ${result.error}`
+        );
+      }
+
+      res.status(500).json({ success: false, error: result.error });
+    }
+  } catch (error) {
+    console.error('❌ API error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get deployment history
+app.get('/api/history', (req, res) => {
+  res.json({ success: true, deployments: deploymentHistory });
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    bot: 'Farcaster Clanker Bot',
+    wallet: account.address,
+    mode: 'manual',
+  });
+});
+
+// Serve simple web interface
+app.get('/', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farcaster Clanker Bot - Manual Deploy</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .wallet-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            font-size: 14px;
+            word-break: break-all;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+        .result a {
+            color: #667eea;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .result a:hover {
+            text-decoration: underline;
+        }
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .instructions {
+            background: #fff3cd;
+            border: 2px solid #ffeaa7;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 30px;
+        }
+        .instructions h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .instructions ol {
+            margin-left: 20px;
+            color: #856404;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Farcaster Clanker Bot</h1>
+        <p class="subtitle">Manual Token Deployment</p>
+        
+        <div class="wallet-info">
+            <strong>📍 Wallet Address:</strong> ${account.address}
+        </div>
+
+        <form id="deployForm">
+            <div class="form-group">
+                <label for="tokenName">Token Name</label>
+                <input 
+                    type="text" 
+                    id="tokenName" 
+                    name="tokenName" 
+                    placeholder="WHEN" 
+                    required
+                />
+            </div>
+
+            <div class="form-group">
+                <label for="tokenSymbol">Token Symbol</label>
+                <input 
+                    type="text" 
+                    id="tokenSymbol" 
+                    name="tokenSymbol" 
+                    placeholder="WHEN" 
+                    required
+                />
+            </div>
+
+            <div class="form-group">
+                <label for="castHash">Cast Hash (Optional - untuk auto-reply)</label>
+                <input 
+                    type="text" 
+                    id="castHash" 
+                    name="castHash" 
+                    placeholder="0x..." 
+                />
+            </div>
+
+            <button type="submit" id="submitBtn">🚀 Deploy Token</button>
+        </form>
+
+        <div class="loader" id="loader"></div>
+        <div class="result" id="result"></div>
+
+        <div class="instructions">
+            <h3>📝 Cara Menggunakan:</h3>
+            <ol>
+                <li>User mention bot Anda di Farcaster dengan command: <code>@bot deploy token name WHEN symbol WHEN</code></li>
+                <li>Copy Cast Hash dari mention tersebut</li>
+                <li>Paste Cast Hash di form ini (optional)</li>
+                <li>Isi Token Name & Symbol sesuai request user</li>
+                <li>Klik Deploy - bot akan auto-deploy dan reply ke cast!</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('deployForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loader = document.getElementById('loader');
+        const result = document.getElementById('result');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const tokenName = document.getElementById('tokenName').value;
+            const tokenSymbol = document.getElementById('tokenSymbol').value;
+            const castHash = document.getElementById('castHash').value;
+
+            // Show loader
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Deploying...';
+            loader.style.display = 'block';
+            result.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/deploy', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ tokenName, tokenSymbol, castHash }),
+                });
+
+                const data = await response.json();
+
+                loader.style.display = 'none';
+                result.style.display = 'block';
+
+                if (data.success) {
+                    result.className = 'result success';
+                    result.innerHTML = `
+                        <h3>✅ Token Deployed Successfully!</h3>
+                        <p><strong>Token:</strong> ${tokenName} (${tokenSymbol})</p>
+                        <p><strong>Contract:</strong> ${data.tokenAddress}</p>
+                        <p><strong>Clanker:</strong> <a href="${data.clankerLink}" target="_blank">${data.clankerLink}</a></p>
+                        <p><strong>TX:</strong> <a href="https://basescan.org/tx/${data.txHash}" target="_blank">View on Basescan</a></p>
+                        ${castHash ? '<p><strong>✅ Reply sent to cast!</strong></p>' : ''}
+                    `;
+                    form.reset();
+                } else {
+                    result.className = 'result error';
+                    result.innerHTML = `
+                        <h3>❌ Deployment Failed</h3>
+                        <p>${data.error}</p>
+                    `;
+                }
+            } catch (error) {
+                loader.style.display = 'none';
+                result.style.display = 'block';
+                result.className = 'result error';
+                result.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <p>${error.message}</p>
+                `;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 Deploy Token';
+            }
+        });
+    </script>
+</body>
+</html>
+  `);
+});
+
+// Start server
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`🎯 Bot server running on port ${PORT}`);
+  console.log(`🌐 Open: http://localhost:${PORT}`);
+  console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
+  console.log('');
+  console.log('📝 Manual Mode:');
+  console.log('1. User mention bot di Farcaster');
+  console.log('2. Copy Cast Hash');
+  console.log('3. Deploy via web interface');
+  console.log('4. Bot auto-reply ke cast!');
+});

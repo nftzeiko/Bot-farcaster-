@@ -2,11 +2,11 @@
   "name": "farcaster-clanker-bot",
   "version": "1.0.0",
   "description": "Farcaster bot for automatic token deployment via Clanker",
-  "main": "index.js",
+  "main": "index-simple.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js"
+    "start": "node index-simple.js",
+    "dev": "node --watch index-simple.js"
   },
   "dependencies": {
     "@farcaster/hub-nodejs": "^0.15.9",
