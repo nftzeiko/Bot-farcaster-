@@ -2,7 +2,8 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import { NeynarAPIClient } from '@neynar/nodejs-sdk';
 import { Clanker } from 'clanker-sdk/v4';
-import { createWalletClient, createPublicClient, http, privateKeyToAccount } from 'viem';
+import { createWalletClient, createPublicClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
 import dotenv from 'dotenv';
 
