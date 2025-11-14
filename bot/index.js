@@ -194,6 +194,96 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Polling mode for free plan users (alternative to webhook)
+async function pollForMentions() {
+  if (!BOT_FID) {
+    console.log('⚠️  Bot FID not available, skipping polling');
+    return;
+  }
+
+  try {
+    console.log('🔄 Polling for mentions...');
+    
+    // Fetch notifications for bot
+    const notifications = await neynar.fetchAllNotifications({
+      fid: BOT_FID,
+      type: 'mentions',
+    });
+
+    if (notifications?.notifications) {
+      for (const notif of notifications.notifications) {
+        const cast = notif.cast;
+        if (!cast) continue;
+
+        const castHash = cast.hash;
+        const castText = cast.text.toLowerCase();
+
+        // Skip if already processed
+        if (processedCasts.has(castHash)) continue;
+
+        console.log(`📩 New mention from @${cast.author.username}: ${cast.text}`);
+
+        // Check if cast contains deploy command
+        if (castText.includes('deploy') && castText.includes('token')) {
+          const command = parseDeployCommand(cast.text);
+
+          if (command) {
+            console.log('✅ Valid deploy command detected');
+            console.log('Token Name:', command.name);
+            console.log('Token Symbol:', command.symbol);
+
+            // Mark as processed
+            processedCasts.add(castHash);
+
+            // Reply with "Processing" message
+            await replyToCast(
+              castHash,
+              `🚀 Deploying token ${command.name} (${command.symbol}) on Base... Please wait!`
+            );
+
+            // Deploy token
+            const result = await deployToken(command.name, command.symbol);
+
+            if (result.success) {
+              // Reply with success and Clanker link
+              await replyToCast(
+                castHash,
+                `✅ Token ${command.name} deployed successfully!\n\n🔗 Clanker: ${result.clankerLink}\n📜 Contract: ${result.tokenAddress}\n⛓️ TX: https://basescan.org/tx/${result.txHash}`
+              );
+            } else {
+              // Reply with error
+              await replyToCast(
+                castHash,
+                `❌ Failed to deploy token: ${result.error || 'Unknown error'}`
+              );
+            }
+          } else {
+            processedCasts.add(castHash);
+            // Invalid command format
+            await replyToCast(
+              castHash,
+              `⚠️ Invalid command format. Please use: deploy token name [NAME] symbol [SYMBOL]`
+            );
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Polling error:', error.message);
+  }
+}
+
+// Start polling every 30 seconds
+const POLLING_ENABLED = process.env.POLLING_MODE === 'true';
+if (POLLING_ENABLED) {
+  console.log('🔄 Polling mode ENABLED (checking mentions every 30 seconds)');
+  setInterval(pollForMentions, 30000); // Poll every 30 seconds
+  // Run first poll after 5 seconds
+  setTimeout(pollForMentions, 5000);
+} else {
+  console.log('📡 Webhook mode (set POLLING_MODE=true in .env to enable polling)');
+}
+
 // Start server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
