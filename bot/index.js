@@ -37,6 +37,26 @@ const clanker = new Clanker({
 console.log('🤖 Farcaster Clanker Bot initialized');
 console.log('Wallet Address:', account.address);
 
+// Get bot's FID from signer
+let BOT_FID = null;
+let processedCasts = new Set(); // Track processed cast hashes
+
+async function initializeBot() {
+  try {
+    // Get signer info to know bot's FID
+    console.log('🔍 Fetching bot FID...');
+    const signerInfo = await neynar.lookupSigner(process.env.SIGNER_UUID);
+    BOT_FID = signerInfo.fid;
+    console.log('✅ Bot FID:', BOT_FID);
+  } catch (error) {
+    console.error('⚠️  Could not fetch bot FID:', error.message);
+    console.log('ℹ️  Bot will still work with webhook mode');
+  }
+}
+
+// Initialize bot on startup
+initializeBot();
+
 // Parse command from cast text
 function parseDeployCommand(text) {
   // Expected format: "deploy token name [NAME] symbol [SYMBOL]"
