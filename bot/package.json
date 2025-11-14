@@ -1,0 +1,19 @@
+{
+  "name": "farcaster-clanker-bot",
+  "version": "1.0.0",
+  "description": "Farcaster bot for automatic token deployment via Clanker",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@neynar/nodejs-sdk": "^1.60.0",
+    "clanker-sdk": "^4.0.0",
+    "viem": "^2.21.54",
+    "express": "^4.21.2",
+    "dotenv": "^16.4.7",
+    "body-parser": "^1.20.3"
+  }
+}
