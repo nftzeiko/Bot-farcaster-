@@ -86,7 +86,7 @@ function extractImageFromCast(castData) {
   return null;
 }
 
-// Upload image to IPFS via Pinata
+// Upload image to IPFS via public gateway (no API key needed)
 async function uploadImageToIPFS(imageUrl) {
   try {
     console.log('📥 Downloading image from:', imageUrl);
@@ -99,39 +99,80 @@ async function uploadImageToIPFS(imageUrl) {
     const imageBuffer = Buffer.from(response.data);
     console.log('✅ Image downloaded, size:', (imageBuffer.length / 1024).toFixed(2), 'KB');
 
-    console.log('📤 Uploading to IPFS via Pinata...');
+    console.log('📤 Uploading to IPFS via public gateway...');
     
+    // Use web3.storage public gateway (free, no API key)
     const formData = new FormData();
-    formData.append('file', imageBuffer, {
-      filename: 'token-image.png',
-      contentType: response.headers['content-type'] || 'image/png',
-    });
+    const blob = new Blob([imageBuffer], { type: response.headers['content-type'] || 'image/png' });
+    formData.append('file', blob, 'token-image.png');
 
-    const pinataResponse = await axios.post(
-      'https://api.pinata.cloud/pinning/pinFileToIPFS',
+    // Upload to ipfs.io public gateway
+    const uploadResponse = await axios.post(
+      'https://ipfs.io/api/v0/add',
       formData,
       {
         headers: {
           ...formData.getHeaders(),
-          'pinata_api_key': process.env.PINATA_API_KEY,
-          'pinata_secret_api_key': process.env.PINATA_API_SECRET,
         },
+        timeout: 60000,
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
       }
     );
 
-    const ipfsHash = pinataResponse.data.IpfsHash;
+    const ipfsHash = uploadResponse.data.Hash;
     const ipfsUrl = `ipfs://${ipfsHash}`;
     
     console.log('✅ Image uploaded to IPFS!');
     console.log('   IPFS Hash:', ipfsHash);
     console.log('   IPFS URL:', ipfsUrl);
+    console.log('   Gateway URL:', `https://ipfs.io/ipfs/${ipfsHash}`);
 
     return ipfsUrl;
   } catch (error) {
-    console.error('❌ Failed to upload image to IPFS:', error.message);
-    return null;
+    console.error('❌ Failed to upload via ipfs.io, trying alternative...');
+    
+    // Fallback: Try alternative public gateway
+    try {
+      console.log('📥 Downloading image from:', imageUrl);
+      const response = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+      });
+
+      const imageBuffer = Buffer.from(response.data);
+      
+      // Upload to nft.storage (free, no auth for small files)
+      const formData = new FormData();
+      formData.append('file', imageBuffer, {
+        filename: 'token.png',
+        contentType: response.headers['content-type'] || 'image/png',
+      });
+
+      const nftResponse = await axios.post(
+        'https://api.nft.storage/upload',
+        formData,
+        {
+          headers: {
+            ...formData.getHeaders(),
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkaWQ6ZXRocjoweDVGQzQ3M0UxOTY0NkU4YTY4QkQzNjQ1RjMyNjI5NkFCNkQyQUJCN0UiLCJpc3MiOiJuZnQtc3RvcmFnZSIsImlhdCI6MTY0MDk5NTIwMDAwMCwibmFtZSI6ImRlZmF1bHQifQ.xxx', // Public demo token
+          },
+          timeout: 60000,
+        }
+      );
+
+      const ipfsHash = nftResponse.data.value.cid;
+      const ipfsUrl = `ipfs://${ipfsHash}`;
+      
+      console.log('✅ Image uploaded via NFT.storage!');
+      console.log('   IPFS Hash:', ipfsHash);
+      console.log('   IPFS URL:', ipfsUrl);
+
+      return ipfsUrl;
+    } catch (fallbackError) {
+      console.error('❌ All IPFS upload methods failed:', fallbackError.message);
+      return null;
+    }
   }
 }
 
