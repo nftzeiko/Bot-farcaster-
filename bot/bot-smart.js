@@ -403,8 +403,15 @@ app.post('/webhook', async (req, res) => {
       const castTextLower = castText.toLowerCase();
       const castHash = data.hash;
       const authorUsername = data.author.username;
+      const authorFid = data.author.fid;
 
-      console.log(`💬 Cast from @${authorUsername}: ${castText}`);
+      console.log(`💬 Cast from @${authorUsername} (FID: ${authorFid}): ${castText}`);
+
+      // Skip if bot's own reply (prevent loop)
+      if (authorFid === 1472721) {
+        console.log('⏭️  Skipping own reply (prevent loop)');
+        return res.status(200).json({ success: true, message: 'Own reply skipped' });
+      }
 
       // Skip if already processed
       if (processedCasts.has(castHash)) {
@@ -414,6 +421,12 @@ app.post('/webhook', async (req, res) => {
 
       // Mark as processed
       processedCasts.add(castHash);
+      
+      // Limit cache size to prevent memory leak
+      if (processedCasts.size > 1000) {
+        const firstItem = processedCasts.values().next().value;
+        processedCasts.delete(firstItem);
+      }
 
       // Check for commands first
       const commandHandled = await handleCommand(castHash, castText, authorUsername);
