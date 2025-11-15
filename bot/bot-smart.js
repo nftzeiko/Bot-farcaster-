@@ -432,6 +432,26 @@ app.post('/webhook', async (req, res) => {
         processedCasts.delete(firstItem);
       }
 
+      // Rate limiting check
+      const now = Date.now();
+      const lastReplyTime = userLastReply.get(authorFid) || 0;
+      const timeSinceLastReply = (now - lastReplyTime) / 1000;
+      
+      if (timeSinceLastReply < RATE_LIMIT_SECONDS) {
+        console.log(`⏱️  Rate limited: User @${authorUsername} must wait ${RATE_LIMIT_SECONDS - Math.floor(timeSinceLastReply)}s`);
+        return res.status(200).json({ success: true, message: 'Rate limited' });
+      }
+
+      // Update last reply time
+      userLastReply.set(authorFid, now);
+      
+      // Cleanup old entries (older than 1 hour)
+      for (const [fid, time] of userLastReply.entries()) {
+        if (now - time > 3600000) {
+          userLastReply.delete(fid);
+        }
+      }
+
       // Check for commands first
       const commandHandled = await handleCommand(castHash, castText, authorUsername);
       
