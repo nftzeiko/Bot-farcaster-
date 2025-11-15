@@ -11,11 +11,13 @@
   "dependencies": {
     "@farcaster/hub-nodejs": "^0.15.9",
     "@neynar/nodejs-sdk": "^1.60.0",
+    "@pinata/sdk": "^2.1.0",
     "axios": "^1.13.2",
     "body-parser": "^1.20.3",
     "clanker-sdk": "^4.0.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "form-data": "^4.0.4",
     "viem": "^2.21.54"
   }
 }
