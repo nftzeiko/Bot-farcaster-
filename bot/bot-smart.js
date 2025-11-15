@@ -50,6 +50,10 @@ console.log('🌐 Language: English Only');
 const processedCasts = new Set();
 const deploymentHistory = [];
 
+// Rate limiting: Track last reply time per user
+const userLastReply = new Map();
+const RATE_LIMIT_SECONDS = 10; // Minimum 10 seconds between replies to same user
+
 // Parse command from cast text
 function parseDeployCommand(text) {
   const nameMatch = text.match(/name\s+([A-Za-z0-9]+)/i);
