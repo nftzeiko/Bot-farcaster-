@@ -1,0 +1,18 @@
+🤖 Farcaster Clanker Bot initialized (WITH IMAGE SUPPORT!)
+💼 Wallet Address: 0x40095BC8f951284389027c28d0ff70A80B23f096
+🖼️  IPFS via Pinata: ENABLED
+
+🎯 Bot webhook server running on port 3001
+📍 Webhook URL: http://localhost:3001/webhook
+🏥 Health check: http://localhost:3001/health
+
+✨ NEW FEATURES:
+   🖼️  Image upload support
+   📤 Auto IPFS upload via Pinata
+   🎨 Token logo from Farcaster cast
+
+📝 Usage:
+   1. Mention bot: @bot deploy token name WHEN symbol WHEN
+   2. Attach image to cast (optional)
+   3. Bot auto-deploy with image!
+
